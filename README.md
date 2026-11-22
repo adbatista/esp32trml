@@ -23,7 +23,8 @@ Botão: **BOOT** (GPIO0). Segure 5–15 s com o dispositivo acordado para abrir 
 ## Branches no GitHub
 
 - `main` — este README e `terminus-customizations/`.
-- `waveshare-esp32-devkit` — o firmware (pasta `trmnl-firmware/`).
+- `waveshare-esp32-devkit` — o firmware (pasta `trmnl-firmware/`), com o PWR do HAT no GPIO19.
+- `waveshare-esp32-devkit-pwr-3v3` — o mesmo firmware para quando o PWR do HAT vai direto no 3V3.
 - `terminus` — o servidor (pasta `terminus/`).
 
 Para montar a pasta local:
