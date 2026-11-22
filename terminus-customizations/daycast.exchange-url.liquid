@@ -1,0 +1,1 @@
+https://api.open-meteo.com/v1/forecast?latitude={{ extension.values.lat_lon | split: "," | first | strip }}&longitude={{ extension.values.lat_lon | split: "," | last | strip }}&hourly=temperature_2m,apparent_temperature,precipitation,cloud_cover,weather_code,wind_speed_10m,wind_direction_10m&daily=sunrise,sunset&timezone=auto&forecast_days=3&timeformat=unixtime
