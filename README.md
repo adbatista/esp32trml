@@ -20,6 +20,22 @@ E-paper TRMNL caseiro com servidor próprio (Terminus) no Mac.
 
 Botão: **BOOT** (GPIO0). Segure 5–15 s com o dispositivo acordado para abrir o portal Wi-Fi.
 
+## Branches no GitHub
+
+- `main` — este README e `terminus-customizations/`.
+- `waveshare-esp32-devkit` — o firmware (pasta `trmnl-firmware/`).
+- `terminus` — o servidor (pasta `terminus/`).
+
+Para montar a pasta local:
+
+```bash
+git clone -b main git@github.com:adbatista/esp32trml.git trml
+cd trml
+git clone -b waveshare-esp32-devkit git@github.com:adbatista/esp32trml.git trmnl-firmware
+git clone -b terminus git@github.com:adbatista/esp32trml.git terminus
+cd terminus && bin/setup docker   # gera o .env (não fica no git)
+```
+
 ## Pastas
 
 - `trmnl-firmware/` — firmware oficial [usetrmnl/trmnl-firmware](https://github.com/usetrmnl/trmnl-firmware), env `waveshare-esp32-driver`, com mudanças locais (`git diff`):
