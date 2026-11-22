@@ -3,3 +3,6 @@
 # Build output and local secrets
 .pio/
 .env
+
+# Local backup of the old nested git histories
+nested-git-backup.tgz
