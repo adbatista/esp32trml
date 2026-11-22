@@ -1,0 +1,52 @@
+<%= render "shared/title", text: "Firmware #{firmware.version}" %>
+
+<section class="bit-page">
+  <header class="bit-header">
+    <ul class="bit-breadcrumbs">
+      <li class="bit-breadcrumb">
+        <%= link_to "Firmware", routes.path(:firmwares), class: :link %>
+      </li>
+
+      <li class="bit-breadcrumb"><%= firmware.version %></li>
+    </ul>
+  </header>
+
+  <div class="bit-body">
+    <div class="bit-card firmware">
+      <h2 class="label"><%= firmware.version %></h2>
+
+      <div class="actions">
+        <%= render "shared/actions/edit", path: routes.path(:firmware_edit, id: firmware.id) %>
+
+        <%= render "shared/actions/download",
+                   path: firmware.attachment_uri,
+                   name: firmware.attachment_name %>
+      </div>
+
+      <%= scope(:tooltip_action_content, label: "Edit").render %>
+      <%= scope(:tooltip_action_content, label: "Download").render %>
+
+      <dl class="bit-definition-list">
+        <dt class="key">Models</dt>
+        <dd class="value">
+          <ul class="list">
+            <% firmware.models.each do |model| %>
+              <%= link_to model.label, routes.path(:model, id: model.id) %>
+            <% end %>
+          </ul>
+        </dd>
+
+        <dt class="key">Size</dt>
+        <dd class="value"><%= size firmware.attachment_size %></dd>
+
+        <dt class="key">Created</dt>
+        <dd class="value"><%= human_at firmware.created_at %></dd>
+
+        <dt class="key">Updated</dt>
+        <dd class="value"><%= human_at firmware.updated_at %></dd>
+      </dl>
+    </div>
+  </div>
+
+  <%= scope(:tooltip_action_content, label: "Info").render %>
+</section>

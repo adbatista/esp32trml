@@ -1,0 +1,320 @@
+# TRMNL Firmware
+
+created for the [TRMNL](https://trmnl.com) e-ink display.
+
+> [!IMPORTANT]
+> the `main` branch is under constant development and may contain breaking changes. flash at your own risk.
+>
+> to access production-ready firmware, check out the [tagged releases](https://github.com/usetrmnl/trmnl-firmware/releases/)
+ or use the [Flash Assistant](https://trmnl.com/flash).
+## **Wake cycle**
+
+Each wake the device connects to Wi-Fi, fetches its screen from `/api/display`, draws it, checks for a reset or firmware update and goes back to deep sleep.
+
+<details>
+<summary>Show the full flowchart</summary>
+
+```mermaid
+flowchart TD
+    Wake(["Wake: power-on, button or timer"]) --> Init("Init board, pins, preferences")
+    Init --> IsButton{"Woken by<br/>the button?"}
+
+    %% Button wake (the TRMNL X reads its touch bar instead)
+    IsButton -->|"Yes"| Press{"How was it<br/>pressed?"}
+    Press -->|"Hold ≥ 15 s"| Wipe1(["Wipe credentials, reboot"])
+    Press -->|"Hold 5–15 s"| ForgetWifi("Forget Wi-Fi")
+    Press -->|"Double-click"| SpecialFn("Run special function")
+    Press -->|"Short press"| Hardware
+    ForgetWifi --> Hardware
+    SpecialFn --> Hardware
+    IsButton -->|"No"| Hardware("Read battery, init display<br/>and filesystem<br/>(wake logo unless timer wake)")
+
+    %% Wi-Fi
+    Hardware --> IsWifiSaved{"Wi-Fi<br/>saved?"}
+    IsWifiSaved -->|"No"| Portal{"Captive portal"}
+    Portal -->|"Reset device"| Wipe2(["Wipe credentials, reboot"])
+    Portal -->|"Timed out"| WifiError(["Show Wi-Fi error, sleep"])
+    Portal -->|"Connected"| Clock
+    IsWifiSaved -->|"Yes"| Connect{"Connected?<br/>(3 attempts)"}
+    Connect -->|"No"| WifiRetry(["Sleep with backoff<br/>(error shown on button wake<br/>or 12th failed wake)"])
+    Connect -->|"Yes"| Clock("Sync clock (NTP)")
+
+    %% Setup
+    Clock --> HasKeys{"API key and<br/>friendly ID saved?"}
+    HasKeys -->|"No"| Setup{"GET /api/setup"}
+    Setup -->|"404 MAC unknown"| NotRegistered(["Show not-registered<br/>screen, sleep"])
+    Setup -->|"200"| SetupOk("Save credentials, show<br/>friendly ID screen")
+    Setup -->|"Other error"| SetupError("Show setup error")
+    SetupOk --> Fetch
+    SetupError --> Fetch
+    HasKeys -->|"Yes"| Fetch
+
+    %% Display
+    Fetch("Send stored logs, GET /api/display,<br/>download and draw the image") --> StayQuiet{"Failed on a timer<br/>wake, < 12 tries?"}
+    StayQuiet -->|"Yes"| QuietSleep(["Sleep with backoff"])
+    StayQuiet -->|"No"| ResetAsked{"Server asked<br/>for a reset?"}
+    ResetAsked -->|"Yes"| Wipe3(["Wipe credentials, reboot"])
+    ResetAsked -->|"No"| UpdateDue{"Firmware<br/>update due?"}
+    UpdateDue -->|"Yes"| Update{"Download and<br/>flash, success?"}
+    Update -->|"Yes"| Reboot(["Reboot"])
+    Update -->|"No"| ShowResult
+    UpdateDue -->|"No"| ShowResult("Show error screen, if any")
+    ShowResult --> MoreTaps{"TRMNL X:<br/>touch bar tapped?"}
+    MoreTaps -->|"Yes"| Fetch
+    MoreTaps -->|"No"| Sleep(["Sleep until the refresh<br/>interval or a button press"])
+```
+
+</details>
+
+## **Web Server Endpoints**
+
+The device talks to its server through three endpoints: `GET /api/setup`, `GET /api/display` and `POST /api/log`. The [BYOS guide](https://docs.trmnl.com/go/diy/byos#api) documents the request headers, every field the firmware reads, the filename rules and the image size + format for each model.
+
+## **Power consumption**
+
+A bit of background first. The ESP32-C3 inside the TRMNL OG is one of Espressif's newer, more efficient microcontrollers. For battery powered applications, it's designed to be put to sleep to conserve power when your project doesn't need it to be active. There are two sleep modes - light and deep. Deep sleep conserves the most power, but at the cost of losing the contents of the main memory. The lowest possible power consumption is about 4uA @ 3V with a timed wakeup, but TRMNL needs to be able to wake up with a button press. Keeping the GPIO active during deep sleep (to detect the button press) uses about 100uA on average (see power profile below). This means that a 2500mAh battery could theoretically keep the TRMNL powered in this state for approximately 25,000 hours.
+
+![TRMNL deep sleep power consumption](/pics/deep-sleep-power-consumption.png)
+
+Of course its not very useful to have a device that's permanently sleeping, so shown below is the power profile of TRMNL doing a normal display update (timed wake up, send device status, fetch new image, show it on the e-paper display):
+
+![TRMNL device full cycle power consumption](/pics/full-cycle.png)
+
+The peaks and valleys you see above represent the variation in electrical current (power) drawn by the ESP32-C3 at different points during the ~10.5 second update cycle. The majority of energy is used while WiFi is active (between the 3 and 9 second marks). The last portion of the graph with higher frequency peaks is from the e-paper display cycling through its update (average power is quite low). The total electrical charge needed for the update is shown in the lower right corner (0.67c). This value is in Coulombs and represents the number of electrons that have moved through the circuit.
+
+0.67 C = 0.186111 mAh
+
+If we ignore the ESP32 sleep periods, the energy used in each display update would allow 2500/0.186111 = 13433 updates. If we configure our TRMNL account to update the information every 15 minutes, we'll be requesting 96 updates per day and the battery charge could last for 140 days (13433 / 96). This isn't too far off from real world results. The battery voltage will drop below a safe threshold before it has released its full energy and in the equation above, we haven't counted the energy used during the sleep periods nor the energy lost in the TRMNL's power supply (between the battery and the ESP32). The real world result will be closer to 120 days on a full charge.
+
+We can extend the battery life further by disabling updates during our sleeping hours. In the TRMNL web portal there is a setting for “Sleep Mode” (see screenshot below):
+
+![TRMNL sleep mode](/pics/sleep-mode.png)
+
+For example - by reducing the total active time each day by 8 hours, the number of updates per day (set to a 15-minute interval like above) changes from 96 to 64. With sleep mode set to 8 hours, our battery life is extended:
+
+13433 / 64 = 210 days (theoretical maximum)
+
+**Designed for Efficiency**
+
+Lithium batteries deliver between 3.7 and 4.2 volts depending on their charge state. The ESP32 operates between 2.8V and 3.3V. In order to power the ESP32 from the battery, the voltage needs to be reduced.
+
+There are two main types of power regulators - [buck](https://en.wikipedia.org/wiki/Buck_converter) converters, and [linear](https://en.wikipedia.org/wiki/Linear_regulator) regulators. Many ESP32 products use linear regulators since they are less expensive. This savings comes at a cost - they throw away up to 20% of the battery's energy as waste heat. Your TRMNL was designed with a buck converter to safely and efficiently power the ESP32. This ensures the best use of the battery's energy. At TRMNL we are always looking for additional software optimizations that improve battery life.
+
+## **Low Battery Level**
+
+Lithium ion batteries are ubiquitous in our lives; they're in nearly everyone's pocket/purse and many other devices you use daily. They bring a host of benefits, some risks and require care to keep them working at their best. Your TRMNL protects the battery against overcharging, but your help is needed to prevent problems when the battery is low. There are two main problems that arise with dead Li-Ion batteries:
+
+1. If they pass below a certain voltage, they need to be recharged with a special trickle charger; the charging circuit of the TRMNL won't be able to charge them.
+2. Batteries that are left uncharged for an extended period of time can “outgas”. This means that the electrolyte goes through a chemical reaction and releases hydrogen gas. You may have seen batteries in this state - the metal envelope puffs up like a balloon.
+
+The conditions above are to be avoided, but `#2` can be dangerous as well. If your battery is puffy, dispose of it safely at a local recycling spot and contact TRMNL support to get a new one.
+
+Even when your TRMNL is disconnected (power switch in the off position), its battery will slowly self-discharge. To keep your TRMNL's battery running at peak performance:
+1. Charge your device immediately when the low battery image is shown.
+2. If you've switched off your TRMNL for storage/moving, ensure the battery is not already low.
+
+## **Version Log**
+
+See [releases](https://github.com/usetrmnl/firmware/releases). For older versions go [here](https://github.com/usetrmnl/firmware/issues/95).
+
+## **Compilation guide**
+
+There are technical and non-technical options to flashing firmware.
+
+### **No code required**
+
+* Flash directly from a web browser: https://trmnl.com/flash
+* Enable OTA updates from your TRMNL dashboard > Device settings (native hardware only)
+
+
+### **Via CLI**
+1. To build the binary run `pio run -e TRMNL_X_dev`
+2. To upload the binary to the device `pio run -e TRMNL_X_dev -t upload`
+3. To fully flash the device (full flash) `pio run -e TRMNL_X_dev -t erase`
+4. If PlatformIO uses the wrong port use this
+```bash
+pio device list # make sure JTAG device is visible
+pio run -e TRMNL_X_dev -t upload --upload-port /dev/cu.usbmodem1234
+```
+4. view serial monitor by
+```bash
+pio device monitor -e TRMNL_X_dev
+pio device monitor -e trmnl
+```
+
+When switching between TRMNL X and OG/BWRY, run `pio pkg install` once for the environment you are about to build (use the same `-e` value as `pio run`):
+
+```bash
+pio pkg install -e TRMNL_X_dev   # TRMNL X
+pio pkg install -e trmnl         # TRMNL OG
+pio pkg install -e trmnl_4clr    # TRMNL BWRY
+```
+
+If you skip this step, the build may fail with `Error: Missing Arduino framework directory 'None'`.
+
+
+### **Using VSCode plugin**
+
+1. Install VS Code: https://code.visualstudio.com
+2. Install PlatformIO: https://platformio.org/install/ide?install=vscode
+3. Install Git: https://git-scm.com/book/en/v2/Appendix-A%3A-Git-in-Other-Environments-Git-in-Visual-Studio-Code
+4. Clone this repository: https://github.com/usetrmnl/trmnl-firmware
+5. Open project in VS Code workspace
+6. After configuring the project, click the PlatformIO -> Build button located at the bottom of the screen
+
+![Image Alt text](/pics/build_icon.JPG "Build")
+
+7. After the compilation process is complete, you should expect to see a message in the console.
+
+![Image Alt text](/pics/console.JPG "Console")
+
+8. You can find the compiled file in the folder shown in the picture.
+
+![Image Alt text](/pics/bin_folder.png "Bin")
+
+## **Uploading guide (PlatformIO)**
+
+1. Put the TRMNL into flashing mode.
+
+    1. **TRMNL OG and BWRY**: Turn off PCB. Connect PCB to PC using USB-C cable. While holding down the boot button, turn on PCB. Let go of boot button. This puts board in flashing mode.
+    2. **TRMNL X**: [See these instructions](https://help.trmnl.com/en/articles/11936721-put-your-trmnl-in-flashing-mode#h_96e07a072e)
+
+2. Mac/Windows: Select the proper COM port from drop-down list (or leave on "Auto"). Ubuntu: Look for something like "/dev/ttyACMO USB JTAG/serial debug unit" or "Espressif USB JTAG/serial debug unit" via lsusb.
+
+![Image Alt text](/pics/fs.jpg "FS")
+
+3. Click on "PlatformIO: Upload" button.
+
+## **Uploading guide (ESP32 Flash Download Tool)**
+
+Tools required:
+
+1. Windows OS
+2. Flash Tool 3.9.5
+3. Binaries to merge - `bootloader.bin`, `firmware.bin`, `partitions.bin` (see Compilation Guide above)
+4. Bootloader binary file (`boot_app0.bin`, found in ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/)
+
+### Step 1 - Configure flash tool
+open the Flash Tool (executable file), select these parameters, then click OK:
+
+![Image Alt text](/pics/select_screen.jpg "select screen")
+
+### Step 2 - Add binaries
+1. Beside the top blank space, click “...” dots and select the bootloader binary file then input
+> “0x00000000”
+in the far right space and check the box.
+
+2. Click “...” dots and select the partitions binary file then input
+> “0x00008000”
+in the far right space and check the box.
+
+3. Click “...” dots and select the boot_app0 binary file then input
+> “0x0000e000”
+in the far right space and check the box.
+
+4. Click “...” dots and select the firmware binary file then input
+> “0x00010000”
+in the far right space and check the box.
+
+![Image Alt text](/pics/binaries.jpg "binaries")
+
+finally, set the following parameters at the bottom of the Flash Tool interface:
+
+![Image Alt text](/pics/settings.jpg "settings")
+
+### Step 3 - Connect and flash device
+1. Open the Windows “Device Manager” program and scroll to the bottom where the USB devices can be found. each machine will have different available devices, but look for a section like this:
+
+![Image Alt text](/pics/devices.jpg "devices")
+
+2. Next, connect the PCB to the Windows machine with a USB-C cable. make sure the USB port is on the right, and that the PCB’s on/off switch is toggled DOWN for “off.”
+
+3. While holding the BOOT button (below the on/off toggle), toggle the device ON by flipping the above switch UP. you may hear a sound from your Windows machine Inspect the Device Manager connections at the bottom of the interface, and a new device should appear. it may be “USB Component {{ Num }},” or something like below:
+
+![Image Alt text](/pics/select_device.jpg "select_device")
+
+4. Take note of this device’s name, that is our TRMNL PCB. then back inside the Flash Tool, click to open the “COM” dropdown in the bottom right and choose the TRMNL PCB. finally, click the “START” button.
+
+![Image Alt text](/pics/start.jpg "start")
+
+### Step 4 - Prepare for new device flashing
+Inside the Flash Tool click the “STOP” button.
+
+![Image Alt text](/pics/stop.jpg "stop")
+
+Next turn off (toggle DOWN) and unplug the PCB. you are now ready to flash another device - see Step 1.
+
+## **Hacking guide**
+
+### Local unit tests
+
+If you would like to run local tests, you'll need to have g++/gcc installed (f.e., as part of MinGW) in PATH:
+
+- Get MinGW online installer from https://github.com/niXman/mingw-builds-binaries/
+- Add path to `bin` from installed folder (f.e. `c:\mingw64\bin`) to your PATH
+- Restart Visual Studio Code
+
+Now you can switch from "env:esp32..." to "esp:native" clicking at the bottom of the studio (point 1):
+
+![](pics/vscode-footer.png)
+
+And then run platformio tests by clicking test button (point 2).
+
+### Hardware integration tests
+
+There is a suite of on-device hardware tests written with the [Unity](https://registry.platformio.org/libraries/throwtheswitch/Unity) test framework, defined in `test/integration/test_all`. They compile into a single firmware image that is uploaded to the device, runs the tests sequentially in `setup()`, and prints results over the serial port.
+
+To run the test suite (currently only on OG):
+
+1. Make a copy of `test/integration/test_config.h.example` to `test/integration/test_config.h` and modify the file as needed to set up the WiFi network and other values. This file is ignored by Git and will not be checked in.
+2. Select the `env:trmnl_test` environment.
+3. Plug in the device and run the "PlatformIO: Test" action.
+    1. If the upload fails, retry the Test action once.
+    2. If the upload still fails, ensure the device is on.
+    3. If the upload still fails, put the device into flashing mode - see "Uploading guide (PlatformIO)" above, and retry.
+
+
+You should see terminal output like:
+
+```
+test/integration/test_all/all.test.cpp:33: connect_to_wifi      [PASSED]
+test/integration/test_all/all.test.cpp:75: test_setup_succeeds_with_registered_mac      [PASSED]
+test/integration/test_all/all.test.cpp:76: test_setup_returns_status_error_for_unknown_mac      [PASSED]
+test/integration/test_all/all.test.cpp:77: test_setup_fails_with_unreachable_host       [PASSED]
+test/integration/test_all/all.test.cpp:97: test_low_battery_returns_low_battery_image   [PASSED]
+test/integration/test_all/all.test.cpp:63: test_wifi_connects_with_valid_credentials    [PASSED]
+test/integration/test_all/all.test.cpp:64: test_wifi_fails_with_wrong_password  [PASSED]
+test/integration/test_all/all.test.cpp:65: test_wifi_fails_with_wrong_ssid      [PASSED]
+---------------------------------------------------------------------------- trmnl_test:integration/test_all [PASSED] Took 56.49 seconds ----------------------------------------------------------------------------
+
+====================================================================================================== SUMMARY ======================================================================================================
+Environment    Test                  Status    Duration
+-------------  --------------------  --------  ------------
+trmnl_test     integration/test_all  PASSED    00:00:56.488
+```
+
+### Debugging in the simulator
+
+[trmnl-sim](https://github.com/usetrmnl/trmnl-sim) runs firmware builds without a device, and
+GDB can debug them there: breakpoints, stepping, watchpoints and backtraces, and a crash stops
+at the faulting instruction. The debug script downloads the latest trmnl-sim release for you
+(macOS arm64 or Linux x86_64) and caches it in `.pio/sim-debug/trmnl-sim`; set
+`TRMNL_SIM_VERSION` (e.g. `v0.3.1`) to pin a release.
+
+1. Open `trmnl.code-workspace` in VS Code and select the env in PlatformIO's status bar.
+2. In the Run and Debug view, start **Debug in simulator**. It builds the env, opens the
+   simulator held at reset, and attaches the debugger, so breakpoints catch the boot.
+   Stopping the debug session stops the simulator.
+
+From a terminal, `scripts/debug_sim.sh <env>` builds and runs the simulator, waiting for GDB on
+127.0.0.1:3333 (`scripts/debug_sim.sh --help`). To just run a build there, without the debugger,
+use `scripts/sim.sh <env>` (`scripts/sim.sh --help`).
+
+## Code Formatting
+
+We use `clang-format` for formatting C/C++ source files. You can install it [via Homebrew](https://formulae.brew.sh/formula/clang-format) or your package manager of choice - it's part of `llvm`.
+
+Two ways to format files:
+
+1. Run `./scripts/format.sh` to format the entire repository.
+2. VS Code users: install [the C/C++ extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cpptools) which will automatically format-on-save using clang-format.

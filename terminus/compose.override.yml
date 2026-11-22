@@ -1,0 +1,7 @@
+# Local override: keep Postgres/Valkey internal to the Docker network
+# (the host already has its own Postgres on 5432).
+services:
+  database:
+    ports: !reset []
+  keyvalue:
+    ports: !reset []

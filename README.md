@@ -20,29 +20,20 @@ E-paper TRMNL caseiro com servidor próprio (Terminus) no Mac.
 
 Botão: **BOOT** (GPIO0). Segure 5–15 s com o dispositivo acordado para abrir o portal Wi-Fi.
 
-## Branches no GitHub
-
-- `main` — este README e `terminus-customizations/`.
-- `waveshare-esp32-devkit` — o firmware (pasta `trmnl-firmware/`), com o PWR do HAT no GPIO19.
-- `waveshare-esp32-devkit-pwr-3v3` — o mesmo firmware para quando o PWR do HAT vai direto no 3V3.
-- `terminus` — o servidor (pasta `terminus/`).
-
-Para montar a pasta local:
+## Montar do zero
 
 ```bash
-git clone -b main git@github.com:adbatista/esp32trml.git trml
-cd trml
-git clone -b waveshare-esp32-devkit git@github.com:adbatista/esp32trml.git trmnl-firmware
-git clone -b terminus git@github.com:adbatista/esp32trml.git terminus
-cd terminus && bin/setup docker   # gera o .env (não fica no git)
+git clone git@github.com:adbatista/esp32trml.git trml
+cd trml/terminus && bin/setup docker   # gera o .env (não fica no git)
 ```
 
 ## Pastas
 
-- `trmnl-firmware/` — firmware oficial [usetrmnl/trmnl-firmware](https://github.com/usetrmnl/trmnl-firmware), env `waveshare-esp32-driver`, com mudanças locais (`git diff`):
+- `trmnl-firmware/` — firmware oficial [usetrmnl/trmnl-firmware](https://github.com/usetrmnl/trmnl-firmware) (base `31a98ac`), env `waveshare-esp32-driver`, para o **PWR do HAT no GPIO19**. Mudanças:
   - `src/display.cpp`: liga o PWR (GPIO19) e inicia o SPI com MISO no GPIO35, para o core não tomar o GPIO19.
   - `src/board_config.cpp` / `include/config.h`: botão no GPIO0 (BOOT), `epd_en` = 19, servidor padrão `http://192.168.1.132:2300`.
   - `src/wake_init.cpp`: log na serial sempre ligado.
+- `trmnl-firmware-pwr-3v3/` — o mesmo firmware para o **PWR do HAT ligado direto no 3V3**: `src/display.cpp` igual ao upstream e sem `epd_en`. Botão, servidor e log iguais.
 - `terminus/` — servidor BYOS [usetrmnl/terminus](https://github.com/usetrmnl/terminus) via Docker (imagem `ghcr.io/usetrmnl/terminus:latest`).
   - `.env`: IP, portas e senhas (gerado por `bin/setup docker`). Não compartilhe.
   - `compose.override.yml`: não expõe Postgres/Valkey no Mac (o Mac já tem Postgres na 5432).
@@ -53,7 +44,7 @@ cd terminus && bin/setup docker   # gera o .env (não fica no git)
 
 ## Comandos
 
-Gravar o firmware (ESP32 na USB):
+Gravar o firmware (ESP32 na USB). Use `trmnl-firmware-pwr-3v3` no lugar se o PWR estiver no 3V3:
 
 ```bash
 cd trmnl-firmware
@@ -83,6 +74,6 @@ docker compose exec web rm /app/tmp_fix_daycast.rb
 ## Se o IP do Mac mudar
 
 1. `terminus/.env`: atualize `API_URI` e rode `docker compose up -d`.
-2. `trmnl-firmware/include/config.h`: atualize `API_BASE_URL` e grave o firmware de novo.
+2. `include/config.h` da pasta do firmware que você usa: atualize `API_BASE_URL` e grave de novo.
 
 Melhor: reserve o IP do Mac no roteador (rede Nick).

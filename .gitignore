@@ -1,3 +1,5 @@
-trmnl-firmware/
-terminus/
 .DS_Store
+
+# Build output and local secrets
+.pio/
+.env

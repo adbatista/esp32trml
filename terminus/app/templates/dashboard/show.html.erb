@@ -1,0 +1,118 @@
+<%= render "shared/title", text: "Dashboard" %>
+
+<section class="page-dashboard">
+  <header class="bit-header">
+    <h1 class="label">Dashboard</h1>
+  </header>
+
+  <div class="column">
+    <div class="widgets">
+      <fieldset class="box">
+        <legend class="label">
+          IP Addresses
+
+          <%= scope(
+            :popover_trigger_button,
+            tip: :info,
+            target: :ip_addresses,
+            width: 20,
+            height: 20).render %>
+        </legend>
+
+        <ul class="list">
+          <% ip_addresses.each do |ip| %>
+            <%= tag.li ip.address_with_kind, class: "bit-secret" %>
+          <% end %>
+
+          <li class="bit-secret"><%= api_uri %> (API)</li>
+        </ul>
+      </fieldset>
+
+      <fieldset class="box">
+        <legend class="label">
+          Firmware
+
+          <%= scope(
+            :popover_trigger_button,
+            tip: :info,
+            target: :firmware,
+            width: 20,
+            height: 20).render %>
+        </legend>
+
+        <ul class="list">
+          <% if firmware %>
+            <li><%= link_to firmware.version, routes.path(:firmwares) %>: Latest.</li>
+          <% end %>
+
+          <li><a href="https://trmnl.com/flash">Flash</a>: A flashing tool.</li>
+          <li><a href="https://tailor.trmnl.com">Tailor</a>: A branding tool.</li>
+        </ul>
+      </fieldset>
+    </div>
+
+    <div class="widgets">
+      <fieldset class="box">
+        <legend class="label">
+          Tools
+
+          <%= scope(
+            :popover_trigger_button,
+            tip: :info,
+            target: :tools,
+            width: 20,
+            height: 20).render %>
+        </legend>
+
+        <ul class="list">
+          <li><%= link_to "WiFi Troubleshoot", "https://trmnl.com/wifi-troubleshoot" %>: Diagnose common network issues.</li>
+        </ul>
+      </fieldset>
+    </div>
+
+    <div class="widgets">
+      <fieldset class="box">
+        <legend class="label bit-text-center">Designs</legend>
+        <p class="number"><%= link_to design_count, routes.path(:designs) %></p>
+      </fieldset>
+
+      <fieldset class="box">
+        <legend class="label bit-text-center">Devices</legend>
+        <p class="number"><%= link_to device_count, routes.path(:devices) %></p>
+      </fieldset>
+
+      <fieldset class="box">
+        <legend class="label bit-text-center">Extensions</legend>
+        <p class="number"><%= link_to extension_count, routes.path(:extensions) %></p>
+      </fieldset>
+
+      <fieldset class="box">
+        <legend class="label bit-text-center">Firmware</legend>
+        <p class="number"><%= link_to firmware_count, routes.path(:firmwares) %></p>
+      </fieldset>
+
+      <fieldset class="box">
+        <legend class="label bit-text-center">Models</legend>
+        <p class="number"><%= link_to model_count, routes.path(:models) %></p>
+      </fieldset>
+
+      <fieldset class="box">
+        <legend class="label bit-text-center">Playlists</legend>
+        <p class="number"><%= link_to playlist_count, routes.path(:playlists) %></p>
+      </fieldset>
+
+      <fieldset class="box">
+        <legend class="label bit-text-center">Screens</legend>
+        <p class="number"><%= link_to screen_count, routes.path(:screens) %></p>
+      </fieldset>
+
+      <fieldset class="box">
+        <legend class="label bit-text-center">Users</legend>
+        <p class="number"><%= link_to user_count, routes.path(:users) %></p>
+      </fieldset>
+    </div>
+  </div>
+
+  <%= scope(:tooltip_action_content, label: "Info").render %>
+  <%= render "popovers" %>
+</section>
